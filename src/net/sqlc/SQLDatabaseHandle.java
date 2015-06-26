@@ -1,6 +1,6 @@
 package net.sqlc;
 
-/* package */ interface SQLDatabaseHandle {
+public interface SQLDatabaseHandle {
   public int open();
   public int close();
   public int keyNativeString(String key);

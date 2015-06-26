@@ -1,6 +1,6 @@
 package net.sqlc;
 
-/* package */ interface SQLStatementHandle {
+public interface SQLStatementHandle {
   public int prepare();
   public int bindDouble(int col, double val);
   public int bindInteger(int col, int val);

@@ -18,9 +18,71 @@ public class SQLiteGlueTest extends Activity
 {
   ArrayAdapter<String> resultsAdapter;
 
+  int errorCount = 0;
+
+  /* package */ void logErrorItem(String result) {
+    android.util.Log.e("SQLiteGlueTest", result);
+    resultsAdapter.add(result);
+  }
+
+  /* package */ void checkIntegerResult(String label, int actual, int expected) {
+    if (expected == actual) {
+      logResult(label + " - OK");
+    } else {
+      ++errorCount;
+      logErrorItem("FAILED CHECK" + label);
+      logErrorItem("expected: " + expected);
+      logErrorItem("actual: " + actual);
+    }
+  }
+
+  /* package */ void checkLongResult(String label, long actual, long expected) {
+    if (expected == actual) {
+      logResult(label + " - OK");
+    } else {
+      ++errorCount;
+      logErrorItem("FAILED CHECK" + label);
+      logErrorItem("expected: " + expected);
+      logErrorItem("actual: " + actual);
+    }
+  }
+
+  /* package */ void checkDoubleResult(String label, double actual, double expected) {
+    if (expected == actual) {
+      logResult(label + " - OK");
+    } else {
+      ++errorCount;
+      logErrorItem("FAILED CHECK" + label);
+      logErrorItem("expected: " + expected);
+      logErrorItem("actual: " + actual);
+    }
+  }
+
+  /* package */ void checkStringResult(String label, String actual, String expected) {
+    if (expected.equals(actual)) {
+      logResult(label + " - OK");
+    } else {
+      ++errorCount;
+      logErrorItem("FAILED CHECK" + label);
+      logErrorItem("expected: " + expected);
+      logErrorItem("actual: " + actual);
+    }
+  }
+
+  /* package */ void logResult(String result) {
+    android.util.Log.i("SQLiteGlueTest", result);
+    resultsAdapter.add(result);
+  }
+
+  /* package */ void logError(String result) {
+    logErrorItem(result);
+    ++errorCount;
+  }
+
   /* package */ void logUnexpectedException(String result, java.lang.Exception ex) {
     android.util.Log.e("SQLiteGlueTest", "UNEXPECTED EXCEPTION IN " + result, ex);
     resultsAdapter.add("UNEXPECTED EXCEPTION IN " + result + " : " + ex);
+    ++errorCount;
   }
 
   /** Called when the activity is first created. */
@@ -51,6 +113,86 @@ public class SQLiteGlueTest extends Activity
   ///* package */ void runTest() {
     try {
 
+    // load library:
+    SQLiteConnector connector = new SQLiteGlueConnector();
+
+    File dbfile = new File(getFilesDir(), "lltest.db");
+
+    SQLDatabaseHandle mydb = new SQLGDatabaseHandle(dbfile.getAbsolutePath(),
+        SQLiteOpenFlags.READWRITE | SQLiteOpenFlags.CREATE);
+
+    int rc = mydb.open();
+
+    if (rc != SQLCode.OK) {
+        logError("open error: " + rc);
+        return;
+    }
+
+    rc = mydb.close();
+
+    checkIntegerResult("first close rc", rc, 0);
+
+    mydb = new SQLGDatabaseHandle(dbfile.getAbsolutePath(), SQLiteOpenFlags.READWRITE);
+    rc = mydb.open();
+    if (rc != SQLCode.OK) {
+      logError("second DB open error: " + rc);
+      return;
+    }
+
+    rc = mydb.close();
+
+    checkIntegerResult("second close rc", rc, 0);
+
+    mydb = new SQLGDatabaseHandle(dbfile.getAbsolutePath(), SQLiteOpenFlags.READWRITE);
+    rc = mydb.open();
+    if (rc != SQLCode.OK) {
+      logError("third DB open error: " + rc);
+      return;
+    }
+
+    //sthandle = SQLiteGlue.sqlg_db_prepare_st(dbhandle, "SELECT UPPER('How about some ascii text?') AS caps");
+    SQLStatementHandle sthandle = mydb.newStatementHandle("SELECT UPPER('How about some ascii text?') AS caps");
+    rc = sthandle.prepare();
+
+    if (rc != SQLCode.OK) {
+      logError("prepare statement error: " + rc);
+      mydb.close();
+      return;
+    }
+
+    sthandle.step();
+
+    int colcount1 = sthandle.getColumnCount();
+    checkIntegerResult("SELECT UPPER() column count: ", colcount1, 1);
+
+/*
+    if (colcount1 > 0) {
+      String colname = SQLiteGlue.sqlg_st_column_name(sthandle, 0);
+      checkStringResult("SELECT UPPER() caps column name", colname, "caps");
+
+      int coltype = SQLiteGlue.sqlg_st_column_type(sthandle, 0);
+      checkIntegerResult("SELECT UPPER() caps column type", coltype, 3);
+
+      String coltext = SQLiteGlue.sqlg_st_column_text_native(sthandle, 0);
+      checkStringResult("SELECT UPPER() as caps", coltext, "HOW ABOUT SOME ASCII TEXT?");
+    }
+    */
+
+    rc = sthandle.finish();
+
+    if (rc != SQLCode.OK) {
+      logError("prepare statement error: " + rc);
+      mydb.close();
+      return;
+    }
+
+    rc = mydb.close();
+
+    checkIntegerResult("third close rc", rc, 0);
+
+
+
+/*
     SQLiteConnector connector = new SQLiteGlueConnector();
 
     File dbfile = new File(getFilesDir(), "mytest.db");
@@ -60,6 +202,16 @@ public class SQLiteGlueTest extends Activity
     try {
       mydbc = connector.newSQLiteConnection(dbfile.getAbsolutePath(),
         SQLiteOpenFlags.READWRITE | SQLiteOpenFlags.CREATE);
+    } catch (SQLException ex) {
+      logUnexpectedException("DB open exception", ex);
+      return;
+    }
+
+    mydbc.dispose();
+
+    // try to reopen database:
+    try {
+      mydbc = connector.newSQLiteConnection(dbfile.getAbsolutePath(), SQLiteOpenFlags.READWRITE);
     } catch (SQLException ex) {
       logUnexpectedException("DB open exception", ex);
       return;
@@ -93,6 +245,16 @@ public class SQLiteGlueTest extends Activity
     r1.add(new String("upper: " + first));
 
     st.dispose();
+
+    mydbc.dispose();
+
+    // try to reopen database:
+    try {
+      mydbc = connector.newSQLiteConnection(dbfile.getAbsolutePath(), SQLiteOpenFlags.READWRITE);
+    } catch (SQLException ex) {
+      logUnexpectedException("DB open exception", ex);
+      return;
+    }
 
     try {
       st = mydbc.prepareStatement("drop table if exists tt;");
@@ -131,7 +293,7 @@ public class SQLiteGlueTest extends Activity
       r1.add("prepare statement exception, as expected OK: " + ex);
       // TODO dispose statement??
     }
-    */
+    // * /
 
     try {
       st = mydbc.prepareStatement("INSERT INTO tt (text1, num1, num2, real1) VALUES (?,?,?,?)");
